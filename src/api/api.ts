@@ -1,5 +1,4 @@
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
 
   
 type RequestOptions = RequestInit & {
@@ -19,7 +18,8 @@ export type ApiError = Error & {
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<ApiResponse<T>> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const requestPath = path.startsWith('/') ? path : `/${path}`
+  const response = await fetch(`${API_BASE_URL}${requestPath}`, {
     headers: {
       'Content-Type': 'application/json',
       ...(options.headers || {}),
