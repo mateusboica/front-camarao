@@ -57,12 +57,15 @@ const toNumber = (value: string | number | undefined) => {
   return Number(value.replace(',', '.')) || 0
 }
 
+const formatCategory = (category?: string | null) =>
+  category?.replace(/_/g, ' ').trim() || 'Outros'
+
 const getCategory = (category: ApiProduct['categoria'], fallback?: string | null) => {
   if (typeof category === 'string') {
-    return category
+    return formatCategory(category)
   }
 
-  return category?.nome || category?.name || category?.titulo || fallback || 'Outros'
+  return formatCategory(category?.nome || category?.name || category?.titulo || fallback)
 }
 
 const normalizeProduct = (product: ApiProduct): Product => {
@@ -85,7 +88,7 @@ const normalizeProduct = (product: ApiProduct): Product => {
 
 const produtoService = {
   list: async (): Promise<Product[]> => {
-    const response = await api.get<ProductListResponse>('/v1/produtos?size=50')
+    const response = await api.get<ProductListResponse>('/v1/produtos?size=50&disponivel=true')
     return getProductsFromResponse(response.data).map(normalizeProduct)
   }
 }

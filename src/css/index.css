@@ -16,6 +16,8 @@
   --surface: #ffffff;
   --surface-soft: #fbfbfa;
   --page-max: 1280px;
+  --bg-input: #e2e2e2;
+  --bg-hover: #f1f1f1;
 }
 
 * {
@@ -406,9 +408,19 @@ input:focus-visible {
   font-weight: 800;
 }
 
+.category-list a.active {
+  background: #fff1f0;
+  color: var(--accent);
+  font-weight: 800;
+}
+
 .category-list a span:last-child {
   color: #8a8a8a;
   font-size: 12px;
+}
+
+.category-list a.active span:last-child {
+  color: var(--accent);
 }
 
 .menu-column {
@@ -469,6 +481,11 @@ input:focus-visible {
 }
 
 .mobile-category-row a:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.mobile-category-row a.active {
   background: var(--accent);
   color: #fff;
 }
@@ -1119,6 +1136,11 @@ input:focus-visible {
     width: 112px;
     height: 112px;
   }
+
+  .skeleton-image {
+    width: 112px;
+    height: 112px;
+  }
 }
 
 @media (min-width: 768px) {
@@ -1190,5 +1212,106 @@ input:focus-visible {
 
   .floating-cart {
     display: none;
+  }
+}
+
+.skeleton {
+  background: linear-gradient(90deg,
+      var(--bg-input) 25%,
+      var(--bg-hover) 50%,
+      var(--bg-input) 75%);
+  background-size: 200% 100%;
+  border-radius: 4px;
+  animation: shimmer 1.4s infinite;
+}
+
+.skeleton-product-card {
+  pointer-events: none;
+}
+
+.skeleton-category-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: 4px;
+  padding: 12px;
+}
+
+.skeleton-category-name {
+  width: min(132px, 72%);
+  height: 14px;
+}
+
+.skeleton-category-count {
+  width: 22px;
+  height: 12px;
+}
+
+.skeleton-mobile-category {
+  width: 92px;
+  height: 34px;
+  flex: 0 0 auto;
+}
+
+.skeleton-mobile-category-wide {
+  width: 120px;
+}
+
+.skeleton-product-info {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.skeleton-line {
+  height: 14px;
+}
+
+.skeleton-title {
+  width: min(240px, 74%);
+  height: 18px;
+}
+
+.skeleton-description {
+  width: 100%;
+  margin-top: 12px;
+}
+
+.skeleton-description-short {
+  width: min(360px, 82%);
+  margin-top: 8px;
+}
+
+.skeleton-price {
+  width: 96px;
+  height: 18px;
+  margin-top: 18px;
+}
+
+.skeleton-product-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.skeleton-image {
+  width: 96px;
+  height: 96px;
+}
+
+.skeleton-button {
+  width: 92px;
+  height: 36px;
+}
+
+.skeleton-button-short {
+  width: 76px;
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
   }
 }

@@ -48,12 +48,62 @@ const mapProductToMenuItem = (product: Product): MenuItem => ({
   tag: product.tags?.[0],
 });
 
+const ProductCardSkeleton = ({ index }: { index: number }) => (
+  <article className="product-card skeleton-product-card" aria-hidden="true">
+    <div className="skeleton-product-info">
+      <div className="skeleton skeleton-line skeleton-title" />
+      <div className="skeleton skeleton-line skeleton-description" />
+      <div className="skeleton skeleton-line skeleton-description skeleton-description-short" />
+      <div className="skeleton skeleton-line skeleton-price" />
+    </div>
+
+    <div className="skeleton-product-actions">
+      <div className="skeleton skeleton-image" />
+      <div
+        className={
+          index % 2 === 0
+            ? "skeleton skeleton-button"
+            : "skeleton skeleton-button skeleton-button-short"
+        }
+      />
+    </div>
+  </article>
+);
+
+const CategoryListSkeleton = () => (
+  <>
+    {Array.from({ length: 5 }).map((_, index) => (
+      <div className="skeleton-category-link" key={index} aria-hidden="true">
+        <div className="skeleton skeleton-category-name" />
+        <div className="skeleton skeleton-category-count" />
+      </div>
+    ))}
+  </>
+);
+
+const MobileCategorySkeleton = () => (
+  <>
+    {Array.from({ length: 4 }).map((_, index) => (
+      <div
+        className={
+          index === 0
+            ? "skeleton skeleton-mobile-category skeleton-mobile-category-wide"
+            : "skeleton skeleton-mobile-category"
+        }
+        key={index}
+        aria-hidden="true"
+      />
+    ))}
+  </>
+);
+
 const App = () => {
   const [cart, setCart] = useState<Cart>({});
   const [search, setSearch] = useState("");
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [productsError, setProductsError] = useState("");
+  const [activeCategoryId, setActiveCategoryId] = useState<CategoryId>("");
 
   useEffect(() => {
     let isMounted = true;
@@ -120,12 +170,73 @@ const App = () => {
     });
   }, [menuItems, search]);
 
-  const visibleCategories = categories
-    .map((category) => ({
-      ...category,
-      items: visibleItems.filter((item) => item.category === category.id),
-    }))
-    .filter((category) => category.items.length > 0);
+  const visibleCategories = useMemo(
+    () =>
+      categories
+        .map((category) => ({
+          ...category,
+          items: visibleItems.filter((item) => item.category === category.id),
+        }))
+        .filter((category) => category.items.length > 0),
+    [categories, visibleItems]
+  );
+
+  useEffect(() => {
+    if (visibleCategories.length === 0) {
+      setActiveCategoryId("");
+      return;
+    }
+
+    setActiveCategoryId((current) =>
+      visibleCategories.some((category) => category.id === current)
+        ? current
+        : visibleCategories[0].id
+    );
+  }, [visibleCategories]);
+
+  useEffect(() => {
+    if (visibleCategories.length === 0) {
+      return;
+    }
+
+    const updateActiveCategory = () => {
+      const currentSection = visibleCategories.reduce<{
+        id: CategoryId;
+        top: number;
+      } | null>((current, category) => {
+        const section = document.getElementById(slugify(category.id));
+
+        if (!section) {
+          return current;
+        }
+
+        const top = section.getBoundingClientRect().top;
+
+        if (top > 170) {
+          return current;
+        }
+
+        if (!current || top > current.top) {
+          return { id: category.id, top };
+        }
+
+        return current;
+      }, null);
+
+      if (currentSection) {
+        setActiveCategoryId(currentSection.id);
+      }
+    };
+
+    updateActiveCategory();
+    window.addEventListener("scroll", updateActiveCategory, { passive: true });
+    window.addEventListener("resize", updateActiveCategory);
+
+    return () => {
+      window.removeEventListener("scroll", updateActiveCategory);
+      window.removeEventListener("resize", updateActiveCategory);
+    };
+  }, [visibleCategories]);
 
   const itemsCount = orderItems.reduce((total, item) => total + item.quantity, 0);
   const subtotal = orderItems.reduce(
@@ -153,6 +264,10 @@ const App = () => {
 
   const getCategoryCount = (category: CategoryId) =>
     menuItems.filter((item) => item.category === category).length;
+
+  const handleCategoryClick = (category: CategoryId) => {
+    setActiveCategoryId(category);
+  };
 
   return (
     <div className="app">
@@ -221,23 +336,41 @@ const App = () => {
               <p>Categorias</p>
             </div>
             <nav className="category-list">
-              {categories.map((category) => (
-                <a key={category.id} href={`#${slugify(category.id)}`}>
-                  <span>{category.label}</span>
-                  <span>{getCategoryCount(category.id)}</span>
-                </a>
-              ))}
+              {isLoadingProducts ? (
+                <CategoryListSkeleton />
+              ) : (
+                categories.map((category) => (
+                  <a
+                    key={category.id}
+                    href={`#${slugify(category.id)}`}
+                    className={activeCategoryId === category.id ? "active" : undefined}
+                    onClick={() => handleCategoryClick(category.id)}
+                  >
+                    <span>{category.label}</span>
+                    <span>{getCategoryCount(category.id)}</span>
+                  </a>
+                ))
+              )}
             </nav>
           </aside>
 
           <section id="cardapio" className="menu-column">
             <div className="menu-toolbar">
               <div className="mobile-category-row">
-                {categories.map((category) => (
-                  <a key={category.id} href={`#${slugify(category.id)}`}>
-                    {category.label}
-                  </a>
-                ))}
+                {isLoadingProducts ? (
+                  <MobileCategorySkeleton />
+                ) : (
+                  categories.map((category) => (
+                    <a
+                      key={category.id}
+                      href={`#${slugify(category.id)}`}
+                      className={activeCategoryId === category.id ? "active" : undefined}
+                      onClick={() => handleCategoryClick(category.id)}
+                    >
+                      {category.label}
+                    </a>
+                  ))
+                )}
               </div>
 
               <div className="menu-toolbar-inner">
@@ -318,12 +451,11 @@ const App = () => {
                 </section>
               ))}
 
-              {isLoadingProducts ? (
-                <div className="empty-search">
-                  <p>Carregando produtos...</p>
-                  <span>Buscando o cardapio atualizado da API.</span>
-                </div>
-              ) : null}
+              {isLoadingProducts
+                ? Array.from({ length: 6 }).map((_, index) => (
+                    <ProductCardSkeleton key={index} index={index} />
+                  ))
+                : null}
 
               {productsError ? (
                 <div className="empty-search error-state">
