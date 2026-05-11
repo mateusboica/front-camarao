@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import lojaService, { defaultStoreInfo, type StoreInfo } from "../api/lojaService";
 import produtoService, { type Product } from "../api/produtoService";
+import { useNavigate } from 'react-router-dom';
 
 type CategoryId = string;
 
@@ -150,7 +151,7 @@ const MobileCategorySkeleton = () => (
 );
 
 const App = () => {
-  const [cart, setCart] = useState<Cart>({});
+  const [cart, setCart] = useState<Cart>(localStorage.getItem("cart") ? JSON.parse(localStorage.getItem("cart") || "{}") : {});
   const [search, setSearch] = useState("");
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [storeInfo, setStoreInfo] = useState<StoreInfo>(defaultStoreInfo);
@@ -158,6 +159,12 @@ const App = () => {
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [productsError, setProductsError] = useState("");
   const [activeCategoryId, setActiveCategoryId] = useState<CategoryId>("");
+  const [clientInfoAtivo, setClientInfoAtivo] = useState(false);
+  const [clientInfo, setClientInfo] = useState({ nome: "", telefone: "" });
+
+  useEffect(() => {
+    localStorage.setItem("cart", JSON.stringify(cart));
+  }, [cart]);
 
   useEffect(() => {
     let isMounted = true;
@@ -447,6 +454,12 @@ const App = () => {
       : null,
   ].filter(Boolean) as Array<{ label: string; value: string; href: string }>;
 
+  const handleFinalizarPedido = () => {
+
+    setClientInfoAtivo(true);
+
+  };
+
   return (
     <div className="app">
       <header className="site-header">
@@ -520,14 +533,14 @@ const App = () => {
 
               <details className="restaurant-details">
                 <summary>
-                  <span>Informacoes da loja</span>
+                  <span>Informações da loja</span>
                   <strong>{storeInfo.horarioHoje || "Horario nao informado"}</strong>
                 </summary>
 
                 <div className="restaurant-detail-grid">
                   <section className="restaurant-detail">
-                    <span>Horario</span>
-                    <strong>{storeInfo.horarioHoje || "Horario nao informado"}</strong>
+                    <span>Horário</span>
+                    <strong>{storeInfo.horarioHoje || "Horário não informado"}</strong>
                     {storeInfo.horarios.length > 0 ? (
                       <div className="schedule-list">
                         {storeInfo.horarios.map((day) => (
@@ -563,8 +576,8 @@ const App = () => {
                   </section>
 
                   <section className="restaurant-detail">
-                    <span>Endereco</span>
-                    <strong>{storeInfo.endereco || "Endereco nao informado"}</strong>
+                    <span>Endereço</span>
+                    <strong>{storeInfo.endereco || "Endereço não informado"}</strong>
                   </section>
                 </div>
               </details>
@@ -737,7 +750,7 @@ const App = () => {
               {productsError ? (
                 <div className="empty-search error-state">
                   <p>{productsError}</p>
-                  <span>Confira se a API esta online e se a URL base esta configurada.</span>
+                  <span>Erro interno</span>
                 </div>
               ) : null}
 
@@ -833,7 +846,7 @@ const App = () => {
                 </div>
               </div>
 
-              <button className="checkout-button" disabled={checkoutDisabled}>
+              <button className="checkout-button" disabled={checkoutDisabled} onClick={handleFinalizarPedido}>
                 {checkoutLabel}
               </button>
             </div>
@@ -923,7 +936,7 @@ const App = () => {
               <div className="customization-section">
                 <div className="customization-heading">
                   <div>
-                    <h3>Observacao</h3>
+                    <h3>Observação</h3>
                     <p>Use para ponto, molho separado ou outras preferencias.</p>
                   </div>
                   <span>Opcional</span>

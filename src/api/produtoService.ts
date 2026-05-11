@@ -31,11 +31,11 @@ type ApiProduct = Partial<Omit<Product, 'id' | 'preco' | 'categoria'>> & {
 type ProductListResponse =
   | ApiProduct[]
   | {
-      content?: ApiProduct[]
-      data?: ApiProduct[]
-      items?: ApiProduct[]
-      produtos?: ApiProduct[]
-    }
+    content?: ApiProduct[]
+    data?: ApiProduct[]
+    items?: ApiProduct[]
+    produtos?: ApiProduct[]
+  }
 
 const getProductsFromResponse = (data: ProductListResponse): ApiProduct[] => {
   if (Array.isArray(data)) {
