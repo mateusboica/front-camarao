@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import lojaService, { defaultStoreInfo, type StoreInfo } from "../api/lojaService";
 import produtoService, { type Product } from "../api/produtoService";
-import { useNavigate } from 'react-router-dom';
 
 type CategoryId = string;
 
@@ -159,8 +158,6 @@ const App = () => {
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [productsError, setProductsError] = useState("");
   const [activeCategoryId, setActiveCategoryId] = useState<CategoryId>("");
-  const [clientInfoAtivo, setClientInfoAtivo] = useState(false);
-  const [clientInfo, setClientInfo] = useState({ nome: "", telefone: "" });
 
   useEffect(() => {
     localStorage.setItem("cart", JSON.stringify(cart));
@@ -456,7 +453,6 @@ const App = () => {
 
   const handleFinalizarPedido = () => {
 
-    setClientInfoAtivo(true);
 
   };
 
