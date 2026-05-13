@@ -23,6 +23,27 @@ type ProductDraft = {
   removedIngredients: string[];
 };
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+const path = '/api/v1/maps/distancia';
+
+async function conexApiMaps() {
+  try {
+    const res = await fetch(`${API_BASE_URL}${path}` , {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    return console.log(res)
+  }
+  catch {
+    return console.log("erro")
+  }
+
+};
+
+conexApiMaps();
+
 const fallbackImage =
   "https://images.unsplash.com/photo-1559847844-5315695dadae?auto=format&fit=crop&w=500&q=80";
 
@@ -423,31 +444,31 @@ const App = () => {
   const contactItems = [
     storeInfo.whatsapp
       ? {
-          label: "WhatsApp",
-          value: storeInfo.whatsapp,
-          href: getWhatsappHref(storeInfo.whatsapp),
-        }
+        label: "WhatsApp",
+        value: storeInfo.whatsapp,
+        href: getWhatsappHref(storeInfo.whatsapp),
+      }
       : null,
     storeInfo.telefone
       ? {
-          label: "Telefone",
-          value: storeInfo.telefone,
-          href: `tel:${storeInfo.telefone.replace(/\s/g, "")}`,
-        }
+        label: "Telefone",
+        value: storeInfo.telefone,
+        href: `tel:${storeInfo.telefone.replace(/\s/g, "")}`,
+      }
       : null,
     storeInfo.email
       ? {
-          label: "Email",
-          value: storeInfo.email,
-          href: `mailto:${storeInfo.email}`,
-        }
+        label: "Email",
+        value: storeInfo.email,
+        href: `mailto:${storeInfo.email}`,
+      }
       : null,
     storeInfo.instagram
       ? {
-          label: "Instagram",
-          value: storeInfo.instagram,
-          href: getInstagramHref(storeInfo.instagram),
-        }
+        label: "Instagram",
+        value: storeInfo.instagram,
+        href: getInstagramHref(storeInfo.instagram),
+      }
       : null,
   ].filter(Boolean) as Array<{ label: string; value: string; href: string }>;
 
@@ -739,8 +760,8 @@ const App = () => {
 
               {isLoadingProducts
                 ? Array.from({ length: 6 }).map((_, index) => (
-                    <ProductCardSkeleton key={index} index={index} />
-                  ))
+                  <ProductCardSkeleton key={index} index={index} />
+                ))
                 : null}
 
               {productsError ? (
