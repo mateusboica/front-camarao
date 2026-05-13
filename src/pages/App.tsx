@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import freteService from "../api/freteService";
 import lojaService, { defaultStoreInfo, type StoreInfo } from "../api/lojaService";
+import pedidoService from "../api/pedidoService";
 import produtoService, { type Product } from "../api/produtoService";
 
 type CategoryId = string;
@@ -23,26 +25,26 @@ type ProductDraft = {
   removedIngredients: string[];
 };
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
-const path = '/api/v1/maps/distancia';
+type CheckoutStep = "identity" | "address" | "payment" | "done";
 
-async function conexApiMaps() {
-  try {
-    const res = await fetch(`${API_BASE_URL}${path}` , {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-    return console.log(res)
-  }
-  catch {
-    return console.log("erro")
-  }
-
+type CustomerForm = {
+  nome: string;
+  telefone: string;
 };
 
-conexApiMaps();
+type AddressForm = {
+  cep: string;
+  rua: string;
+  numero: string;
+  bairro: string;
+  complemento: string;
+  referencia: string;
+};
+
+type PaymentForm = {
+  metodo: "pix" | "cartao" | "dinheiro";
+  trocoPara: string;
+};
 
 const fallbackImage =
   "https://images.unsplash.com/photo-1559847844-5315695dadae?auto=format&fit=crop&w=500&q=80";
@@ -52,6 +54,38 @@ const formatCurrency = (value: number) =>
     style: "currency",
     currency: "BRL",
   }).format(value);
+
+const onlyDigits = (value: string) => value.replace(/\D/g, "");
+
+const formatPhone = (value: string) => {
+  const digits = onlyDigits(value).slice(0, 11);
+
+  if (digits.length <= 2) {
+    return digits;
+  }
+
+  if (digits.length <= 6) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  }
+
+  if (digits.length <= 10) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  }
+
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+};
+
+const formatCep = (value: string) => {
+  const digits = onlyDigits(value).slice(0, 8);
+
+  return digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits;
+};
+
+const parseCurrencyInput = (value: string) => {
+  const normalized = value.replace(/[^\d,.-]/g, "").replace(",", ".");
+
+  return Number(normalized) || 0;
+};
 
 const normalizeCategory = (category?: string | null) =>
   (category || "Outros").trim() || "Outros";
@@ -179,6 +213,27 @@ const App = () => {
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [productsError, setProductsError] = useState("");
   const [activeCategoryId, setActiveCategoryId] = useState<CategoryId>("");
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [checkoutStep, setCheckoutStep] = useState<CheckoutStep>("identity");
+  const [customerForm, setCustomerForm] = useState<CustomerForm>({ nome: "", telefone: "" });
+  const [addressForm, setAddressForm] = useState<AddressForm>({
+    cep: "",
+    rua: "",
+    numero: "",
+    bairro: "",
+    complemento: "",
+    referencia: "",
+  });
+  const [paymentForm, setPaymentForm] = useState<PaymentForm>({
+    metodo: "pix",
+    trocoPara: "",
+  });
+  const [deliveryCep, setDeliveryCep] = useState("");
+  const [checkoutDeliveryFee, setCheckoutDeliveryFee] = useState<number | null>(null);
+  const [checkoutError, setCheckoutError] = useState("");
+  const [freightError, setFreightError] = useState("");
+  const [isCalculatingFreight, setIsCalculatingFreight] = useState(false);
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
 
   useEffect(() => {
     localStorage.setItem("cart", JSON.stringify(cart));
@@ -348,9 +403,11 @@ const App = () => {
     (total, item) => total + item.price * item.quantity,
     0
   );
-  const deliveryFee = subtotal > 0 ? storeInfo.taxaEntrega : 0;
+  const deliveryFee = subtotal > 0 && checkoutDeliveryFee !== null ? checkoutDeliveryFee : 0;
   const serviceFee = subtotal > 0 ? storeInfo.taxaServico : 0;
   const total = subtotal + deliveryFee + serviceFee;
+  const hasCalculatedFreight = checkoutDeliveryFee !== null;
+  const deliveryFeeLabel = hasCalculatedFreight ? formatCurrency(deliveryFee) : "A calcular";
   const canOrder = storeInfo.aberto;
   const minimumRemaining = Math.max(storeInfo.pedidoMinimo - subtotal, 0);
   const hasReachedMinimum = subtotal >= storeInfo.pedidoMinimo;
@@ -472,9 +529,223 @@ const App = () => {
       : null,
   ].filter(Boolean) as Array<{ label: string; value: string; href: string }>;
 
-  const handleFinalizarPedido = () => {
+  const openCheckout = () => {
+    if (checkoutDisabled) {
+      return;
+    }
 
+    setCheckoutError("");
+    setCheckoutStep("identity");
+    setIsCheckoutOpen(true);
+  };
 
+  const closeCheckout = () => {
+    if (isSubmittingOrder) {
+      return;
+    }
+
+    setIsCheckoutOpen(false);
+    setCheckoutError("");
+  };
+
+  const updateCustomerForm = (field: keyof CustomerForm, value: string) => {
+    setCustomerForm((current) => ({
+      ...current,
+      [field]: field === "telefone" ? formatPhone(value) : value,
+    }));
+  };
+
+  const updateAddressForm = (field: keyof AddressForm, value: string) => {
+    const nextValue = field === "cep" ? formatCep(value) : value;
+
+    setAddressForm((current) => ({
+      ...current,
+      [field]: nextValue,
+    }));
+
+    if (field === "cep") {
+      setDeliveryCep(nextValue);
+      setCheckoutDeliveryFee(null);
+      setFreightError("");
+    }
+  };
+
+  const updateDeliveryCep = (value: string) => {
+    const nextCep = formatCep(value);
+
+    setDeliveryCep(nextCep);
+    setAddressForm((current) => ({ ...current, cep: nextCep }));
+    setCheckoutDeliveryFee(null);
+    setFreightError("");
+  };
+
+  const updatePaymentForm = (field: keyof PaymentForm, value: string) => {
+    setPaymentForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  };
+
+  const continueFromIdentity = () => {
+    if (!customerForm.nome.trim() || onlyDigits(customerForm.telefone).length < 10) {
+      setCheckoutError("Informe seu nome e um telefone valido para continuar.");
+      return;
+    }
+
+    setCheckoutError("");
+    setCheckoutStep("address");
+  };
+
+  const calculateFreight = async (cepValue = deliveryCep) => {
+    const digitsCep = onlyDigits(cepValue);
+
+    if (digitsCep.length !== 8) {
+      const message = "Informe um CEP valido para calcular o frete.";
+
+      setFreightError(message);
+      setCheckoutError(message);
+      return null;
+    }
+
+    if (!storeInfo.id) {
+      const message = "Nao foi possivel identificar a loja para calcular o frete.";
+
+      setFreightError(message);
+      setCheckoutError(message);
+      return null;
+    }
+
+    try {
+      setIsCalculatingFreight(true);
+      setCheckoutError("");
+      setFreightError("");
+
+      const frete = await freteService.calcular({
+        lojaId: storeInfo.id,
+        cep: digitsCep,
+      });
+
+      const valorFrete = frete.taxaEntrega;
+      setCheckoutDeliveryFee(valorFrete);
+      return valorFrete;
+    } catch (error) {
+      console.error("Erro ao calcular frete:", error);
+      const message = "Nao foi possivel calcular o frete para este CEP.";
+
+      setCheckoutDeliveryFee(null);
+      setFreightError(message);
+      setCheckoutError(message);
+      return null;
+    } finally {
+      setIsCalculatingFreight(false);
+    }
+  };
+
+  const calculateDeliveryFromCart = async () => {
+    await calculateFreight(deliveryCep);
+  };
+
+  const calculateAddressDelivery = async () => {
+    const hasRequiredAddress = onlyDigits(addressForm.cep).length === 8 && addressForm.numero.trim();
+
+    if (!hasRequiredAddress) {
+      setCheckoutError("Preencha CEP e numero para calcular a entrega.");
+      return;
+    }
+
+    try {
+      const endereco = await freteService.buscarEnderecoPorCep(onlyDigits(addressForm.cep));
+
+      setAddressForm((current) => ({
+        ...current,
+        cep: formatCep(endereco.cep),
+        rua: endereco.logradouro || current.rua,
+        bairro: endereco.bairro || current.bairro,
+        complemento: current.complemento || endereco.complemento || "",
+      }));
+    } catch (error) {
+      console.error("Erro ao buscar CEP:", error);
+      setCheckoutError("Nao foi possivel encontrar este CEP.");
+      return;
+    }
+
+    const valorFrete = await calculateFreight(addressForm.cep);
+
+    if (valorFrete !== null) {
+      setCheckoutStep("payment");
+    }
+  };
+
+  const confirmPayment = async () => {
+    if (checkoutDeliveryFee === null) {
+      setCheckoutError("Calcule a taxa de entrega antes de concluir.");
+      setCheckoutStep("address");
+      return;
+    }
+
+    if (paymentForm.metodo === "dinheiro") {
+      const changeValue = parseCurrencyInput(paymentForm.trocoPara);
+
+      if (changeValue > 0 && changeValue < total) {
+        setCheckoutError("O valor para troco precisa ser maior que o total do pedido.");
+        return;
+      }
+    }
+
+    try {
+      setIsSubmittingOrder(true);
+      setCheckoutError("");
+
+      await pedidoService.post({
+        lojaId: storeInfo.id || "",
+        cliente: {
+          nome: customerForm.nome.trim(),
+          telefone: onlyDigits(customerForm.telefone),
+        },
+        itens: orderItems.map((item) => ({
+          produtoId: item.id,
+          quantidade: item.quantity,
+          nome: item.name,
+          valorUnitario: item.price,
+        })),
+        enderecoEntrega: {
+          cep: onlyDigits(addressForm.cep),
+          rua: addressForm.rua.trim(),
+          numero: addressForm.numero.trim(),
+          bairro: addressForm.bairro.trim(),
+          complemento: addressForm.complemento.trim() || undefined,
+          referencia: addressForm.referencia.trim() || undefined,
+        },
+        pagamento: {
+          metodo: paymentForm.metodo,
+          trocoPara:
+            paymentForm.metodo === "dinheiro" && paymentForm.trocoPara
+              ? parseCurrencyInput(paymentForm.trocoPara)
+              : null,
+        },
+        subtotal,
+        taxaEntrega: checkoutDeliveryFee,
+        taxaServico: serviceFee,
+        total,
+      });
+
+      setCart({});
+      setCheckoutStep("done");
+    } catch (error) {
+      console.error("Erro ao finalizar pedido:", error);
+      setCheckoutError("Nao foi possivel concluir o pedido agora. Tente novamente.");
+    } finally {
+      setIsSubmittingOrder(false);
+    }
+  };
+
+  const resetCheckout = () => {
+    setIsCheckoutOpen(false);
+    setCheckoutStep("identity");
+    setCheckoutDeliveryFee(null);
+    setCheckoutError("");
+    setFreightError("");
+    setIsCalculatingFreight(false);
   };
 
   return (
@@ -613,13 +884,39 @@ const App = () => {
                 </div>
                 <div>
                   <span>Taxa</span>
-                  <strong>{formatCurrency(storeInfo.taxaEntrega)}</strong>
+                  <strong>{hasCalculatedFreight ? deliveryFeeLabel : "Informe o CEP"}</strong>
                 </div>
                 <div>
                   <span>Minimo</span>
                   <strong>{formatCurrency(storeInfo.pedidoMinimo)}</strong>
                 </div>
               </div>
+
+              <form
+                className="delivery-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  calculateDeliveryFromCart();
+                }}
+              >
+                <input
+                  value={deliveryCep}
+                  onChange={(event) => updateDeliveryCep(event.target.value)}
+                  placeholder="CEP para entrega"
+                  inputMode="numeric"
+                />
+                <button type="submit" disabled={isCalculatingFreight}>
+                  {isCalculatingFreight ? "..." : "Calcular"}
+                </button>
+              </form>
+
+              {freightError ? (
+                <div className="freight-message error">{freightError}</div>
+              ) : hasCalculatedFreight ? (
+                <div className="freight-message">
+                  Frete calculado: {formatCurrency(deliveryFee)}
+                </div>
+              ) : null}
 
               <a className="plain-action" href="#cardapio">
                 Ver cardapio
@@ -851,7 +1148,7 @@ const App = () => {
                 </div>
                 <div>
                   <span>Taxa de entrega</span>
-                  <span>{formatCurrency(deliveryFee)}</span>
+                  <span>{deliveryFeeLabel}</span>
                 </div>
                 <div>
                   <span>Taxa de servico</span>
@@ -863,7 +1160,7 @@ const App = () => {
                 </div>
               </div>
 
-              <button className="checkout-button" disabled={checkoutDisabled} onClick={handleFinalizarPedido}>
+              <button className="checkout-button" disabled={checkoutDisabled} onClick={openCheckout}>
                 {checkoutLabel}
               </button>
             </div>
@@ -881,6 +1178,261 @@ const App = () => {
         </span>
         <span>{formatCurrency(total)}</span>
       </a>
+
+      {isCheckoutOpen ? (
+        <div className="modal-backdrop" role="presentation" onClick={closeCheckout}>
+          <section
+            className="checkout-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="checkout-modal-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              className="modal-close-button"
+              onClick={closeCheckout}
+              aria-label="Fechar checkout"
+              disabled={isSubmittingOrder}
+            >
+              ×
+            </button>
+
+            <div className="checkout-modal-header">
+              <span>Checkout</span>
+              <h2 id="checkout-modal-title">
+                {checkoutStep === "identity" ? "Dados para contato" : "Finalizar pedido"}
+              </h2>
+              <div className="checkout-steps" aria-label="Etapas do checkout">
+                {[
+                  { id: "address", label: "Endereco" },
+                  { id: "payment", label: "Pagamento" },
+                  { id: "done", label: "Conclusao" },
+                ].map((step, index) => (
+                  <span
+                    key={step.id}
+                    className={
+                      checkoutStep === step.id ||
+                      (checkoutStep === "payment" && index === 0) ||
+                      (checkoutStep === "done" && index < 2)
+                        ? "active"
+                        : undefined
+                    }
+                  >
+                    {step.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div className="checkout-modal-body">
+              {checkoutStep === "identity" ? (
+                <div className="checkout-section">
+                  <div className="checkout-section-heading">
+                    <h3>Quem esta pedindo?</h3>
+                    <p>Usaremos estes dados apenas para identificar e avisar sobre o pedido.</p>
+                  </div>
+                  <label>
+                    Nome
+                    <input
+                      value={customerForm.nome}
+                      onChange={(event) => updateCustomerForm("nome", event.target.value)}
+                      placeholder="Seu nome"
+                    />
+                  </label>
+                  <label>
+                    Telefone
+                    <input
+                      value={customerForm.telefone}
+                      onChange={(event) => updateCustomerForm("telefone", event.target.value)}
+                      placeholder="(84) 99999-9999"
+                      inputMode="tel"
+                    />
+                  </label>
+                </div>
+              ) : null}
+
+              {checkoutStep === "address" ? (
+                <div className="checkout-section">
+                  <div className="checkout-section-heading">
+                    <h3>Endereco de entrega</h3>
+                    <p>Preencha o endereco para calcular a taxa de entrega.</p>
+                  </div>
+                  <div className="checkout-grid">
+                    <label>
+                      CEP
+                      <input
+                        value={addressForm.cep}
+                        onChange={(event) => updateAddressForm("cep", event.target.value)}
+                        placeholder="59000-000"
+                        inputMode="numeric"
+                      />
+                    </label>
+                    <label>
+                      Numero
+                      <input
+                        value={addressForm.numero}
+                        onChange={(event) => updateAddressForm("numero", event.target.value)}
+                        placeholder="123"
+                      />
+                    </label>
+                  </div>
+                  <label>
+                    Rua
+                    <input
+                      value={addressForm.rua}
+                      onChange={(event) => updateAddressForm("rua", event.target.value)}
+                      placeholder="Nome da rua"
+                    />
+                  </label>
+                  <label>
+                    Bairro
+                    <input
+                      value={addressForm.bairro}
+                      onChange={(event) => updateAddressForm("bairro", event.target.value)}
+                      placeholder="Seu bairro"
+                    />
+                  </label>
+                  <div className="checkout-grid">
+                    <label>
+                      Complemento
+                      <input
+                        value={addressForm.complemento}
+                        onChange={(event) => updateAddressForm("complemento", event.target.value)}
+                        placeholder="Apto, bloco"
+                      />
+                    </label>
+                    <label>
+                      Referencia
+                      <input
+                        value={addressForm.referencia}
+                        onChange={(event) => updateAddressForm("referencia", event.target.value)}
+                        placeholder="Perto de..."
+                      />
+                    </label>
+                  </div>
+                </div>
+              ) : null}
+
+              {checkoutStep === "payment" ? (
+                <div className="checkout-section">
+                  <div className="checkout-section-heading">
+                    <h3>Pagamento</h3>
+                    <p>Escolha como voce prefere pagar o pedido.</p>
+                  </div>
+                  <div className="payment-options">
+                    {[
+                      { id: "pix", label: "Pix" },
+                      { id: "cartao", label: "Cartao na entrega" },
+                      { id: "dinheiro", label: "Dinheiro" },
+                    ].map((option) => (
+                      <label
+                        key={option.id}
+                        className={paymentForm.metodo === option.id ? "active" : undefined}
+                      >
+                        <input
+                          type="radio"
+                          name="payment"
+                          value={option.id}
+                          checked={paymentForm.metodo === option.id}
+                          onChange={(event) => updatePaymentForm("metodo", event.target.value)}
+                        />
+                        <span>{option.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                  {paymentForm.metodo === "dinheiro" ? (
+                    <label>
+                      Troco para
+                      <input
+                        value={paymentForm.trocoPara}
+                        onChange={(event) => updatePaymentForm("trocoPara", event.target.value)}
+                        placeholder="Ex: 100,00"
+                        inputMode="decimal"
+                      />
+                    </label>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {checkoutStep === "done" ? (
+                <div className="checkout-section checkout-done">
+                  <span>Pedido recebido</span>
+                  <h3>Obrigado, {customerForm.nome.trim() || "cliente"}!</h3>
+                  <p>Seu pedido foi enviado para a loja. Acompanhe o telefone informado para atualizacoes.</p>
+                </div>
+              ) : null}
+
+              {checkoutError ? <div className="checkout-error">{checkoutError}</div> : null}
+
+              <div className="checkout-summary">
+                <div>
+                  <span>Itens</span>
+                  <strong>{itemsCount}</strong>
+                </div>
+                <div>
+                  <span>Subtotal</span>
+                  <strong>{formatCurrency(subtotal)}</strong>
+                </div>
+                <div>
+                  <span>Entrega</span>
+                  <strong>
+                    {deliveryFeeLabel}
+                  </strong>
+                </div>
+                <div>
+                  <span>Servico</span>
+                  <strong>{formatCurrency(serviceFee)}</strong>
+                </div>
+                <div className="checkout-summary-total">
+                  <span>Total</span>
+                  <strong>{formatCurrency(total)}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div className="checkout-modal-footer">
+              {checkoutStep === "identity" ? (
+                <button className="modal-primary-button" onClick={continueFromIdentity}>
+                  Continuar
+                </button>
+              ) : null}
+              {checkoutStep === "address" ? (
+                <>
+                  <button className="checkout-secondary-button" onClick={() => setCheckoutStep("identity")}>
+                    Voltar
+                  </button>
+                  <button
+                    className="modal-primary-button"
+                    onClick={calculateAddressDelivery}
+                    disabled={isCalculatingFreight}
+                  >
+                    {isCalculatingFreight ? "Calculando..." : "Calcular frete"}
+                  </button>
+                </>
+              ) : null}
+              {checkoutStep === "payment" ? (
+                <>
+                  <button className="checkout-secondary-button" onClick={() => setCheckoutStep("address")}>
+                    Voltar
+                  </button>
+                  <button
+                    className="modal-primary-button"
+                    onClick={confirmPayment}
+                    disabled={isSubmittingOrder}
+                  >
+                    {isSubmittingOrder ? "Enviando..." : "Concluir pedido"}
+                  </button>
+                </>
+              ) : null}
+              {checkoutStep === "done" ? (
+                <button className="modal-primary-button" onClick={resetCheckout}>
+                  Fechar
+                </button>
+              ) : null}
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {productDraft ? (
         <div className="modal-backdrop" role="presentation" onClick={closeProductDraft}>
